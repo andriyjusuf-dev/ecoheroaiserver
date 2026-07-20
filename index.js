@@ -147,10 +147,37 @@ bot.on('text', async (ctx) => {
     }
 });
 
-// Launch the bot (uses long polling by default, which is great for local testing and simple deployments)
-if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== 'your_telegram_bot_token_here') {
+// Setup Webhook or Long Polling
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL; // Render automatically provides this variable
+
+if (RENDER_URL) {
+    // We are on Render, use Webhook!
+    // Tell Telegram to send messages to our Render URL
+    bot.telegram.setWebhook(`${RENDER_URL}/webhook`);
+    
+    // Tell Express to pass incoming webhook requests to Telegraf
+    app.use(bot.webhookCallback('/webhook'));
+    
+    // A simple health check route
+    app.get('/', (req, res) => {
+        res.send('Eco Hero Telegram Bot is online via Webhook! 🌍♻️');
+    });
+
+    app.listen(port, () => {
+        console.log(`Express server listening on port ${port} (Webhook mode)`);
+    });
+} else if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== 'your_telegram_bot_token_here') {
+    // We are running locally, use Long Polling!
     bot.launch();
-    console.log('Eco Hero Telegram Bot is running! 🌍');
+    console.log('Eco Hero Telegram Bot is running locally! (Long Polling mode) 🌍');
+    
+    app.get('/', (req, res) => {
+        res.send('Eco Hero Telegram Bot is online locally! 🌍♻️');
+    });
+
+    app.listen(port, () => {
+        console.log(`Express health-check server listening on port ${port}`);
+    });
 } else {
     console.warn('⚠️ TELEGRAM_BOT_TOKEN is not set in .env file. Bot is not running.');
 }
@@ -158,14 +185,3 @@ if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== 'your_t
 // Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-// --- Express Server ---
-// We start a simple web server so that cloud providers (like Render) can bind to a port
-// and know that our service is "healthy" and alive.
-app.get('/', (req, res) => {
-    res.send('Eco Hero Telegram Bot is online! 🌍♻️');
-});
-
-app.listen(port, () => {
-    console.log(`Express health-check server listening on port ${port}`);
-});
