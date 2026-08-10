@@ -139,7 +139,7 @@ bot.on('text', async (ctx) => {
 
         if (provider === 'deepseek') {
             const completion = await deepseek.chat.completions.create({
-                model: 'deepseek-chat',
+                model: 'deepseek-v4-pro',
                 messages: [
                     { role: 'system', content: SYSTEM_INSTRUCTION },
                     ...userSessions[chatId]
