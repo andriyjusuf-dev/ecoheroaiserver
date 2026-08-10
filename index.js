@@ -2,12 +2,19 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const express = require('express');
 const { GoogleGenAI } = require('@google/genai');
+const { OpenAI } = require('openai');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 // Initialize Google Gen AI
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// Initialize DeepSeek (using OpenAI SDK)
+const deepseek = new OpenAI({
+    baseURL: 'https://api.deepseek.com',
+    apiKey: process.env.DEEPSEEK_API_KEY
+});
 
 // Initialize Telegram Bot
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
@@ -116,7 +123,7 @@ bot.on('text', async (ctx) => {
     }
     
     // Add user message to history
-    userSessions[chatId].push({ role: 'user', parts: [{ text: userMessage }] });
+    userSessions[chatId].push({ role: 'user', content: userMessage });
 
     // Ensure we don't exceed a reasonable history length to save tokens
     if (userSessions[chatId].length > 10) {
@@ -127,18 +134,37 @@ bot.on('text', async (ctx) => {
     ctx.sendChatAction('typing');
 
     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro',
-            contents: userSessions[chatId],
-            config: {
-                systemInstruction: SYSTEM_INSTRUCTION,
-            }
-        });
+        let replyText = '';
+        const provider = process.env.AI_PROVIDER || 'gemini';
 
-        const replyText = response.text;
+        if (provider === 'deepseek') {
+            const completion = await deepseek.chat.completions.create({
+                model: 'deepseek-chat',
+                messages: [
+                    { role: 'system', content: SYSTEM_INSTRUCTION },
+                    ...userSessions[chatId]
+                ]
+            });
+            replyText = completion.choices[0].message.content;
+        } else {
+            // Default to Gemini
+            const geminiHistory = userSessions[chatId].map(msg => ({
+                role: msg.role === 'assistant' ? 'model' : msg.role,
+                parts: [{ text: msg.content }]
+            }));
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-pro',
+                contents: geminiHistory,
+                config: {
+                    systemInstruction: SYSTEM_INSTRUCTION,
+                }
+            });
+            replyText = response.text;
+        }
         
         // Add model response to history
-        userSessions[chatId].push({ role: 'model', parts: [{ text: replyText }] });
+        userSessions[chatId].push({ role: 'assistant', content: replyText });
 
         ctx.reply(replyText);
     } catch (error) {
